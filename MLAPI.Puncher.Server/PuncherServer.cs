@@ -95,17 +95,21 @@ namespace MLAPI.Puncher.Server
         private void ProcessMessage()
         {
             int receiveSize = Transport.ReceiveFrom(_buffer, 0, _buffer.Length, -1, out IPEndPoint senderEndpoint);
-
+            Console.WriteLine($"===========");
+            Console.WriteLine($"[{nameof(PuncherServer)}] Receive Packet from: {senderEndpoint}");
+            
             // Address
             IPAddress senderAddress = senderEndpoint.Address;
 
             if (receiveSize != _buffer.Length)
             {
+                Console.WriteLine($"[{nameof(PuncherServer)}] Discarding Packet due to Length Mismatch");
                 return;
             }
 
             if (_buffer[0] != (byte)MessageType.Register)
             {
+                Console.WriteLine($"[{nameof(PuncherServer)}] Not a Registration Message, Discarding");
                 return;
             }
 
@@ -116,12 +120,14 @@ namespace MLAPI.Puncher.Server
 
             if (isListener)
             {
+                Console.WriteLine($"[{nameof(PuncherServer)}] Is a Listener");
                 _listenerClientsLock.EnterUpgradeableReadLock();
 
                 try
                 {
                     if (_listenerClients.TryGetValue(senderAddress, out Client client))
                     {
+                        Console.WriteLine($"[{nameof(PuncherServer)}] Listener Already Registered, Refreshing");
                         _listenerClientsLock.EnterWriteLock();
 
                         try
@@ -138,6 +144,7 @@ namespace MLAPI.Puncher.Server
                     }
                     else
                     {
+                        Console.WriteLine($"[{nameof(PuncherServer)}] Adding new Listener");
                         _listenerClientsLock.EnterWriteLock();
 
                         try
@@ -169,6 +176,7 @@ namespace MLAPI.Puncher.Server
 
                 // Send to listener
                 Transport.SendTo(_buffer, 0, _buffer.Length, -1, senderEndpoint);
+                Console.WriteLine($"[{nameof(PuncherServer)}] Sent {MessageType.Registered} Message to Listener");
             }
 
             if (isConnector)
@@ -178,6 +186,7 @@ namespace MLAPI.Puncher.Server
 
                 // Parse address
                 IPAddress listenerAddress = new IPAddress(_ipBuffer);
+                Console.WriteLine($"[{nameof(PuncherServer)}] Is a Connector, Requested listener: {listenerAddress}");
 
                 // Read token size
                 byte tokenSize = _buffer[6];
@@ -186,6 +195,7 @@ namespace MLAPI.Puncher.Server
                 if (tokenSize > _buffer.Length - 6)
                 {
                     // Invalid token size
+                    Console.WriteLine($"[{nameof(PuncherServer)}] Invalid Token Size");
                     return;
                 }
 
@@ -199,6 +209,8 @@ namespace MLAPI.Puncher.Server
                     // Look for the client they wish to connec tto
                     if (_listenerClients.TryGetValue(listenerAddress, out Client listenerClient) && listenerClient.IsListener)
                     {
+                        Console.WriteLine($"[{nameof(PuncherServer)}] Found Client, Sending ConnectTo");
+
                         // Write message type
                         _buffer[0] = (byte)MessageType.ConnectTo;
 
@@ -216,6 +228,7 @@ namespace MLAPI.Puncher.Server
                         Buffer.BlockCopy(_tokenBuffer, 0, _buffer, 8, tokenSize);
 
                         // Send to connector
+                        Console.WriteLine($"[{nameof(PuncherServer)}] Sending Listener: {listenerClient.EndPoint} to Connector: {senderEndpoint}");
                         Transport.SendTo(_buffer, 0, _buffer.Length, -1, senderEndpoint);
 
                         // Write address
@@ -226,10 +239,13 @@ namespace MLAPI.Puncher.Server
                         _buffer[6] = (byte)(senderEndpoint.Port >> 8);
 
                         // Send to listener
+                        Console.WriteLine($"[{nameof(PuncherServer)}] Sending Connector: {senderEndpoint} to Listener: {listenerClient.EndPoint}");
                         Transport.SendTo(_buffer, 0, _buffer.Length, -1, listenerClient.EndPoint);
                     }
                     else
                     {
+                        Console.WriteLine($"[{nameof(PuncherServer)}] Error: Client Not Found");
+
                         // Prevent info leaks
                         Array.Clear(_buffer, 0, _buffer.Length);
 
